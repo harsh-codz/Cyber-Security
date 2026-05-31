@@ -1,0 +1,14 @@
+DeviceProcessEvents
+| where FileName in~ ("powershell.exe","pwsh.exe","powershell_ise.exe")
+| extend CmdLine = tolower(ProcessCommandLine)
+| where CmdLine has_any ("-enc","-encodedcommand","iex","-executionpolicy","invoke-expression","-ep","downloadstring","downloadfile","invoke-webrequest","iwr","wget","curl","frombase64string","hidden","-w hidden","-nop","-noprofile")
+| where AccountSid !in ("S-1-5-18","S-1-5-19","S-1-5-20","S-1-5-15")
+// Optional environment specific tuning:
+// |where AccountName !in~ ("known admin accounts","known service account")
+// |where ProcessCommandLine !contains "Known begin tool name" 
+| summarize 
+      FirstSeen = min(Timestamp),
+      LastSeen = max(Timestamp),
+      EventCount = count()
+      by DeviceName, AccountName,AccountSid,FileName,ProcessCommandLine,InitiatingProcessFileName, InitiatingProcessCommandLine
+| sort by EventCount desc, LastSeen desc
