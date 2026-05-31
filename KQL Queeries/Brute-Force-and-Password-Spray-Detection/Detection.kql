@@ -1,0 +1,10 @@
+EntraIdSignInEvents
+| where Timestamp > ago(1d)
+| where LogonType == "interactive"
+| where ErrorCode != 0
+| summarize
+    FailedAttempts = count(),
+    DistinctUsers = dcount(AccountUpn)
+    by IPAddress, bin(Timestamp, 1h)
+| where FailedAttempts > 5
+| order by FailedAttempts desc
