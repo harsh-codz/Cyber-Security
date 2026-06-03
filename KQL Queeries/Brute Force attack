@@ -1,7 +1,0 @@
-Entraidsigninevents
-|where timestamp> ago(1d)
-|where logonType == "InteractiveUser"
-|where errorcode != 0
-|summarize count() by AccountDisplayName,IpAddress
-|where count_ >5
-|order by count_
