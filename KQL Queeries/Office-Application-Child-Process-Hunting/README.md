@@ -2,11 +2,23 @@
 
 ## Overview
 
-Microsoft Office applications are frequently abused by attackers to execute malicious code, download payloads, establish persistence, or launch post-exploitation tools.
+Microsoft Office applications are frequently targeted by attackers as an initial access vector. Malicious documents, embedded macros, phishing attachments, and weaponized Office files can be used to spawn suspicious child processes, download payloads, or establish persistence.
 
-This project contains two KQL detections designed to identify suspicious child processes spawned from Office applications.
+This project contains two Microsoft Defender XDR KQL detections focused on identifying potentially malicious child processes launched from Office applications.
 
-The detections are intended for threat hunting and investigation within Microsoft Defender XDR.
+The detections combine both signature-based and anomaly-based hunting techniques.
+
+---
+
+## Data Source
+
+**Microsoft Defender XDR**
+
+Table:
+
+```text
+DeviceProcessEvents
+```
 
 ---
 
@@ -14,24 +26,22 @@ The detections are intended for threat hunting and investigation within Microsof
 
 ## Objective
 
-Identify known suspicious executables launched directly from Microsoft Office applications.
+Detect known suspicious executables launched directly by Microsoft Office applications.
 
-Attackers commonly use Office documents containing:
+Attackers commonly abuse Office applications to launch:
 
-- Malicious macros
-- Embedded objects
-- Exploits
-- Social engineering payloads
+- PowerShell
+- Command Prompt
+- Windows Script Host
+- LOLBins (Living-off-the-Land Binaries)
+- Download utilities
+- Persistence mechanisms
 
-to spawn command interpreters, scripting engines, or LOLBins.
+This detection focuses on identifying these known attack patterns.
 
 ---
 
-## Detection Logic
-
-Monitor Office applications acting as parent processes and identify child processes frequently associated with malicious activity.
-
-### Office Parent Processes
+## Office Parent Processes Monitored
 
 - winword.exe
 - excel.exe
@@ -41,7 +51,9 @@ Monitor Office applications acting as parent processes and identify child proces
 - msaccess.exe
 - publisher.exe
 
-### Suspicious Child Processes
+---
+
+## Suspicious Child Processes Monitored
 
 - cmd.exe
 - powershell.exe
@@ -53,17 +65,29 @@ Monitor Office applications acting as parent processes and identify child proces
 - regsvr32.exe
 - certutil.exe
 - bitsadmin.exe
-- schtasks.exe
 - wmic.exe
-- installutil.exe
+- schtasks.exe
 - msbuild.exe
+- installutil.exe
+
+---
+
+## Detection Logic
+
+The query identifies Office applications spawning known suspicious child processes and performs additional command-line analysis to detect:
+
+- Encoded PowerShell payloads
+- Base64 decoding activity
+- Download cradles
+- Script execution abuse
+- Hidden execution techniques
 
 ---
 
 ## MITRE ATT&CK Mapping
 
-| Technique | Description |
-|------------|------------|
+| Technique ID | Technique |
+|-------------|------------|
 | T1204 | User Execution |
 | T1566 | Phishing |
 | T1059 | Command and Scripting Interpreter |
@@ -73,44 +97,33 @@ Monitor Office applications acting as parent processes and identify child proces
 
 ---
 
-## Investigation Steps
-
-1. Review the Office document involved.
-2. Identify the parent Office process.
-3. Examine the spawned child process.
-4. Review command-line arguments.
-5. Check downloaded files.
-6. Investigate network connections.
-7. Determine whether the activity is legitimate.
-
----
-
 # Detection 2: Uncommon Child Processes Spawned by Office Applications
 
 ## Objective
 
-Identify unusual or previously unseen child processes launched by Office applications.
+Identify unusual or previously unseen child processes launched by Microsoft Office applications.
 
-Instead of looking for known bad processes, this detection excludes common and expected child processes and highlights everything else for analyst review.
+Instead of looking for known malicious executables, this detection excludes commonly observed child processes and highlights everything else for investigation.
 
-This approach helps uncover:
+This approach is useful for discovering:
 
-- Novel attacker techniques
+- Novel attack techniques
 - New LOLBins
 - Malware execution chains
 - Environment-specific anomalies
+- Custom attacker tooling
 
 ---
 
-## Detection Logic
+## Common Child Processes Excluded
 
-Monitor Office applications as parent processes.
+Examples include:
 
-Exclude commonly observed child processes such as:
-
-- chrome.exe
 - msedge.exe
+- chrome.exe
+- firefox.exe
 - teams.exe
+- ms-teams.exe
 - outlook.exe
 - splwow64.exe
 - protocolhandler.exe
@@ -119,63 +132,52 @@ Exclude commonly observed child processes such as:
 - acrobat.exe
 - microsoft.mashup.container.loader.exe
 
-Any remaining child process should be reviewed for legitimacy.
+These are commonly observed and often legitimate in enterprise environments.
 
 ---
 
-## MITRE ATT&CK Mapping
+## Detection Logic
 
-| Technique | Description |
-|------------|------------|
-| T1204 | User Execution |
-| T1055 | Process Injection |
-| T1218 | System Binary Proxy Execution |
-| T1036 | Masquerading |
-| T1059 | Command and Scripting Interpreter |
+The query:
+
+1. Identifies Office applications acting as parent processes.
+2. Excludes known and expected child processes.
+3. Reviews remaining child processes.
+4. Applies risk scoring based on suspicious indicators.
 
 ---
 
 ## Risk Scoring Methodology
 
-This detection assigns a risk score based on suspicious indicators found in the process command line.
-
-### Network Activity Indicators
+### Network-Based Indicators (+30)
 
 - http://
 - https://
-- download
 - invoke-webrequest
+- download
 - webclient
 
-Score: +30
-
-### Obfuscation Indicators
+### Obfuscation Indicators (+30)
 
 - -enc
 - -encodedcommand
 - frombase64string
 - iex
 
-Score: +30
+### Suspicious Execution Locations (+20)
 
-### Suspicious File Locations
+- AppData
+- Temp
+- Public
+- Downloads
 
-- temp
-- appdata
-- public
-- downloads
-
-Score: +20
-
-### High-Risk LOLBins
+### High-Risk LOLBins (+20)
 
 - mshta.exe
 - rundll32.exe
 - regsvr32.exe
 - certutil.exe
 - bitsadmin.exe
-
-Score: +20
 
 ---
 
@@ -190,41 +192,119 @@ Score: +20
 
 ---
 
-## Data Source
+## MITRE ATT&CK Mapping
 
-Microsoft Defender XDR
-
-```text
-DeviceProcessEvents
-```
+| Technique ID | Technique |
+|-------------|------------|
+| T1204 | User Execution |
+| T1055 | Process Injection |
+| T1218 | System Binary Proxy Execution |
+| T1036 | Masquerading |
+| T1059 | Command and Scripting Interpreter |
 
 ---
 
-## False Positives
+## Investigation Guide
 
-### Detection 1
+### 1. Review the Parent Office Process
 
-- Administrative scripts
-- Internal automation
+Determine:
+
+- Which Office application launched the child process
+- Whether a document was recently opened
+- Whether the activity aligns with expected user behavior
+
+---
+
+### 2. Examine the Child Process
+
+Review:
+
+- File name
+- Command line
+- Execution path
+- Digital signature
+
+Look for:
+
+- PowerShell execution
+- LOLBins
+- Encoded commands
+- Download activity
+
+---
+
+### 3. Analyze Command-Line Arguments
+
+Indicators of concern include:
+
+- Encoded payloads
+- Base64 strings
+- Download commands
+- Hidden execution
+- Obfuscation techniques
+
+---
+
+### 4. Investigate Network Activity
+
+Determine whether the process:
+
+- Downloaded files
+- Connected to external IPs
+- Communicated with suspicious domains
+
+---
+
+### 5. Review File Activity
+
+Check for:
+
+- Newly created files
+- Persistence mechanisms
+- Dropped executables
+- Scheduled tasks
+
+---
+
+### 6. Validate User Intent
+
+Determine whether the behavior was:
+
+- Legitimate business activity
+- Administrative activity
+- Security testing
+- Malicious execution
+
+---
+
+## False Positive Considerations
+
+Legitimate activity may include:
+
+- Internal automation scripts
 - Software deployment tools
-- IT support activity
-
-### Detection 2
-
-- Newly installed software
 - Office add-ins
-- Business applications
-- Custom enterprise tooling
+- Enterprise applications
+- Remote support tools
+- Business workflows
+- Security testing activities
 
 Environment-specific tuning is recommended.
 
 ---
 
-## Analyst Notes
+## Detection Strategy
 
-Detection 1 focuses on identifying known malicious behaviors.
+This project uses two complementary approaches:
 
-Detection 2 focuses on anomaly hunting by identifying uncommon child processes that may indicate new attack techniques.
+### Detection 1 – Signature-Based Hunting
+
+Focuses on known suspicious child processes commonly used by attackers.
+
+### Detection 2 – Anomaly-Based Hunting
+
+Focuses on uncommon child processes and behavioral anomalies that may reveal previously unknown attack techniques.
 
 Using both detections together provides broader visibility into Office-based attack chains.
 
@@ -232,6 +312,6 @@ Using both detections together provides broader visibility into Office-based att
 
 ## Author
 
-Harsh Kethwas
+**Harsh Kethwas**
 
-SOC Analyst | Threat Hunting | Microsoft Defender XDR | KQL | Detection Engineering
+SOC Analyst | Microsoft Defender XDR | KQL | Threat Hunting | Detection Engineering
