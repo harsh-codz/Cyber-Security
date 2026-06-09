@@ -1,0 +1,37 @@
+DeviceProcessEvents
+| where Timestamp > ago(14d)
+| where FileName in~ ("schtasks.exe", "powershell.exe", "pwsh.exe", "cmd.exe")
+| extend CL = tolower(ProcessCommandLine)
+| extend Parent = tolower(InitiatingProcessFileName)
+| extend RiskScore = 0
+| extend RiskScore = RiskScore + iff(
+    FileName in~ ("schtasks.exe") and (CL contains "/create" or CL contains "/change" or CL contains "register-scheduledtask" or CL contains "new-scheduledtask"),
+    30, 0)
+| extend RiskScore = RiskScore + iff(
+    CL contains "-enc" or CL contains "-encodedcommand" or CL contains "frombase64string" or CL contains "invoke-expression" or CL contains "iex",
+    30, 0)
+| extend RiskScore = RiskScore + iff(
+    CL contains "hidden" or CL contains "-windowstyle hidden" or CL contains "-w hidden" or CL contains "-nop" or CL contains "-noprofile",
+    20, 0)
+| extend RiskScore = RiskScore + iff(
+    CL contains "/ru system" or CL contains "/rl highest" or CL contains "/sc onlogon" or CL contains "/sc once" or CL contains "/sc minute" or CL contains "/sc hourly",
+    20, 0)
+| extend RiskScore = RiskScore + iff(
+    Parent in~ ("winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "mshta.exe", "wscript.exe", "cscript.exe"),
+    20, 0)
+| extend RiskScore = RiskScore + iff(
+    CL contains "\\appdata\\" or CL contains "\\temp\\" or CL contains "\\programdata\\" or CL contains "\\public\\",
+    20, 0)
+| where RiskScore >= 40
+| summarize
+    FirstSeen = min(Timestamp),
+    LastSeen = max(Timestamp),
+    EventCount = count()
+    by DeviceName,
+       AccountName,
+       FileName,
+       ProcessCommandLine,
+       InitiatingProcessFileName,
+       InitiatingProcessCommandLine,
+       RiskScore
+| order by RiskScore desc, EventCount desc, LastSeen desc
